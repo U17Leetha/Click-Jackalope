@@ -20,7 +20,7 @@ click-jackalope -u "https://target.example.com/"
 # Create and open the POC in your default browser
 click-jackalope -u "https://target.example" -e
 
-# Create with a custom filename
+# Create with a custom filename (Make sure the output file has a .html extension)
 click-jackalope -u "https://target.example" -f c2poc.html -e
 
 # Installation One-liner
