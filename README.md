@@ -14,7 +14,7 @@ Options:
   -h            Show this help / usage
 
 # Examples
-# Create a POC file (clickjack_test.html) for the target
+# Create a POC file for the target
 click-jackalope -u "https://target.example.com/"
 
 # Create and open the POC in your default browser
