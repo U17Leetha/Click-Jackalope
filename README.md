@@ -24,4 +24,4 @@ click-jackalope -u "https://target.example" -e
 click-jackalope -u "https://target.example" -f c2poc.html -e
 
 # Installation One-liner
-    sudo sh -c 'curl -fsSL https://raw.githubusercontent.com/<GITHUB_USER>/Click-Jackalope/main/click-jackalope -o /usr/local/bin/click-jackalope && chmod +x /usr/local/bin/click-jackalope'
+    sudo sh -c 'curl -fsSL https://raw.githubusercontent.com/U17Leetha/Click-Jackalope/main/click-jackalope -o /usr/local/bin/click-jackalope && chmod +x /usr/local/bin/click-jackalope'
