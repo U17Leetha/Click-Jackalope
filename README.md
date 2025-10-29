@@ -15,13 +15,13 @@ Options:
 
 # Examples
 # Create a POC file (clickjack_test.html) for the target
-click-jackalope -u "https://sandbox.connecta.hillrom.com/software3.50/"
+click-jackalope -u "https://website.com/"
 
 # Create and open the POC in your default browser
-click-jackalope -u "https://sandbox.connecta.hillrom.com/software3.50/" -e
+click-jackalope -u "https://website.com" -e
 
 # Create with a custom filename
-click-jackalope -u "https://target" -f c2poc.html -e
+click-jackalope -u "https://website.com" -f c2poc.html -e
 
 # Installation One-liner
     sudo sh -c 'curl -fsSL https://raw.githubusercontent.com/<GITHUB_USER>/Click-Jackalope/main/click-jackalope -o /usr/local/bin/click-jackalope && chmod +x /usr/local/bin/click-jackalope'
