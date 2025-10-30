@@ -9,9 +9,9 @@ within Burp Suite without leaving the workflow.</p>
   <li>Adds a "Click-Jackalope" tab for manual URL entry and POC generation</li>
   <li>Right-click context menu option: "Create Click-Jackalope POC" from selected requests</li>
   <li>Auto-generates filenames based on target host for organized evidence</li>
-  <li>Optionally opens the generated file in your default system browser</li>
+  <li>Optionally opens the generated file in your default system browser or Burp's embedded browser</li>
   <li>Escapes embedded URLs to prevent HTML injection and operates fully offline</li>
-  <li>Lightweight and dependency-free (pure Jython implementation)</li>
+  <li>Lightweight and dependency-free (pure Jython implementation; no external network calls)</li>
 </ul>
 
 <h2>Usage</h2>
@@ -23,6 +23,42 @@ within Burp Suite without leaving the workflow.</p>
   <li>Optionally edit the output filename</li>
   <li>Click <strong>Generate</strong> to create a local HTML file, or
     <strong>Generate &amp; Open</strong> to open it immediately in your browser</li>
-  <li>Use the generated page to verify whether the target allows framing and to demonstrate
-    missing <code>X-Frame-Options</code> or weak <code>Content-Security-Policy</code> headers</li>
+  <li>Use the generated page to verify whether the target allows framing (absence of <code>X-Frame-Options</code>
+    or permissive <code>Content-Security-Policy: frame-ancestors</code> is demonstrated by a loaded iframe)</li>
 </ol>
+
+<h2>Setup</h2>
+
+<ol>
+  <li>Ensure you have a Jython standalone JAR available (recommended: <code>jython-standalone-2.7.2.jar</code> or later).
+    Download it from the official Jython project and store it locally.</li>
+  <li>Open Burp → <strong>Extender → Options → Python Environment</strong> and add the Jython standalone JAR you downloaded.
+    This tells Burp where to find the Python runtime for Jython-based extensions.</li>
+  <li>Open Burp → <strong>Extender → Extensions → Add</strong>:
+    <ul>
+      <li><strong>Extension type:</strong> Python</li>
+      <li><strong>Extension file:</strong> select <code>click_jackalope_burp.py</code> from the repository</li>
+    </ul>
+    After loading you should see a new tab called <strong>Click-Jackalope</strong>.</li>
+  <li>If your Burp installation does not expose an unloading handler or certain APIs (older Burp versions), the extension will still function;
+    the extension checks for available APIs at runtime and uses safe fallbacks.</li>
+  <li>No additional libraries or network access are required; the extension works offline once loaded.</li>
+</ol>
+
+<h2>Compatibility & Troubleshooting</h2>
+
+<ul>
+  <li><strong>Burp &amp; Jython:</strong> Tested with Burp classic extension API and Jython 2.7.x. If Burp cannot load Python extensions, verify the Python Environment setting and the Jython JAR path.</li>
+  <li><strong>Opening generated files:</strong> The extension attempts several methods to open the generated HTML (Java Desktop.browse, Burp callbacks.openUrl, and OS-level <code>open</code>/<code>xdg-open</code>/<code>start</code>). On headless JVMs or restricted environments automatic opening may not succeed — the file is still saved and the path is shown in a dialog.</li>
+  <li><strong>Security:</strong> The extension treats target URLs as untrusted and performs basic HTML escaping before embedding them. Always run Click-Jackalope only against targets you are authorized to test.</li>
+</ul>
+
+<h2>Notes</h2>
+
+<ul>
+  <li>This extension is intentionally minimal and auditable. If you would like optional features (for example: toggleable <code>sandbox</code> attributes, automatic screenshot capture, or saving POCs into the Burp project workspace), those can be added in follow-up releases.</li>
+</ul>
+
+<h2>Author Note</h2>
+
+<p>Click-Jackalope was developed to streamline creating evidence artifacts for clickjacking testing during authorized security assests.</p>
