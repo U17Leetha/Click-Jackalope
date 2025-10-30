@@ -1,0 +1,28 @@
+<p>Click-Jackalope generates ready-to-use HTML iframe proof-of-concept (POC) pages for testing
+clickjacking vulnerabilities. It enables testers to quickly create and open POCs directly from
+within Burp Suite without leaving the workflow.</p>
+
+<h2>Features</h2>
+
+<ul>
+  <li>Create HTML iframe clickjacking POCs directly from Burp Suite</li>
+  <li>Adds a "Click-Jackalope" tab for manual URL entry and POC generation</li>
+  <li>Right-click context menu option: "Create Click-Jackalope POC" from selected requests</li>
+  <li>Auto-generates filenames based on target host for organized evidence</li>
+  <li>Optionally opens the generated file in your default system browser</li>
+  <li>Escapes embedded URLs to prevent HTML injection and operates fully offline</li>
+  <li>Lightweight and dependency-free (pure Jython implementation)</li>
+</ul>
+
+<h2>Usage</h2>
+
+<ol>
+  <li>Navigate to the <strong>Click-Jackalope</strong> tab</li>
+  <li>Enter or paste the target URL, or right-click a request and choose
+    <strong>"Create Click-Jackalope POC"</strong></li>
+  <li>Optionally edit the output filename</li>
+  <li>Click <strong>Generate</strong> to create a local HTML file, or
+    <strong>Generate &amp; Open</strong> to open it immediately in your browser</li>
+  <li>Use the generated page to verify whether the target allows framing and to demonstrate
+    missing <code>X-Frame-Options</code> or weak <code>Content-Security-Policy</code> headers</li>
+</ol>
