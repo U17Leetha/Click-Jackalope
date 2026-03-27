@@ -34,3 +34,12 @@ jar {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
 }
+
+ tasks.register('copyRootJar', Copy) {
+    dependsOn jar
+    from jar.archiveFile
+    into layout.projectDirectory
+    rename { 'click-jackalope-burp.jar' }
+}
+
+jar.finalizedBy(tasks.named('copyRootJar'))

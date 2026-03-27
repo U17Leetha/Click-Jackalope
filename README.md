@@ -38,11 +38,17 @@ Build artifact:
 build/libs/click-jackalope-burp-1.0.0.jar
 ```
 
+Convenience copy in the repository root after building:
+
+```text
+click-jackalope-burp.jar
+```
+
 ## Using In Burp
 1. Open `Extensions > Installed` in Burp Suite.
 2. Click `Add`.
 3. Set the extension type to `Java`.
-4. Select [click-jackalope-burp-1.0.0.jar](/Users/matt/Development/Click-Jackalope/build/libs/click-jackalope-burp-1.0.0.jar) after building it.
+4. Select `click-jackalope-burp.jar` after building it.
 5. Load the extension and open the `Click-Jackalope` tab.
 
 Typical workflow:
@@ -52,16 +58,16 @@ Typical workflow:
 - Save the HTML locally and open it in a browser to verify framing behavior.
 
 ## BApp Submission Notes
-- The supported Burp implementation is the Java/Montoya source under [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java).
+- The supported Burp implementation is the Java/Montoya source under `src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java`.
 - The extension builds into a normal JAR and no longer requires Jython.
 - The repository intentionally ignores local Burp project files, build outputs, generated HTML, and the legacy Jython prototype so the submission tree stays clean.
 - The extension performs only local UI, file-generation, and browser-opening actions. It does not transmit generated data to external services.
 
 ## Reviewer Notes
-- Primary entry point: [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java)
-- Main UI: [ClickJackalopePanel.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopePanel.java)
-- HTML generation: [ClickJackalopeHtmlGenerator.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeHtmlGenerator.java)
-- Context menu integration: [ClickJackalopeContextMenuItemsProvider.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeContextMenuItemsProvider.java)
+- Primary entry point: `src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java`
+- Main UI: `src/main/java/com/clickjackalope/burp/ClickJackalopePanel.java`
+- HTML generation: `src/main/java/com/clickjackalope/burp/ClickJackalopeHtmlGenerator.java`
+- Context menu integration: `src/main/java/com/clickjackalope/burp/ClickJackalopeContextMenuItemsProvider.java`
 
 ## CLI Helper
 The standalone shell helper is still included for simple local generation:
@@ -102,5 +108,5 @@ The lab includes:
 These routes give users known-good expected outcomes when trying the Burp extension or CLI for the first time.
 
 ## Repository Notes
-- The supported Burp implementation is the Java source under [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java).
+- The supported Burp implementation is the Java source under `src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java`.
 - The shell helper remains available for quick standalone PoC generation outside Burp.
