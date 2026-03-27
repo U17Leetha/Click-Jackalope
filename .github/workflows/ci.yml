@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x gradlew
+
+      - name: Run tests and build JAR
+        run: ./gradlew test jar
+
+      - name: Upload Burp extension JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: click-jackalope-burp
+          path: |
+            click-jackalope-burp.jar
+            build/libs/click-jackalope-burp-*.jar

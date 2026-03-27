@@ -45,6 +45,11 @@ public final class ClickJackalopeExtension implements BurpExtension, ExtensionUn
         safelyDeregister(contextMenuRegistration);
         safelyDeregister(suiteTabRegistration);
 
+        if (panel != null)
+        {
+            panel.shutdown();
+        }
+
         if (executorService != null)
         {
             executorService.shutdownNow();

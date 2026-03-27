@@ -18,6 +18,14 @@ repositories {
 
 dependencies {
     compileOnly 'net.portswigger.burp.extensions:montoya-api:2026.2'
+    testCompileOnly 'net.portswigger.burp.extensions:montoya-api:2026.2'
+    testRuntimeOnly 'net.portswigger.burp.extensions:montoya-api:2026.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.12.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.12.2'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 jar {
@@ -35,11 +43,16 @@ jar {
     }
 }
 
- tasks.register('copyRootJar', Copy) {
+tasks.register('copyRootJar') {
     dependsOn jar
-    from jar.archiveFile
-    into layout.projectDirectory
-    rename { 'click-jackalope-burp.jar' }
+    outputs.file(layout.projectDirectory.file('click-jackalope-burp.jar'))
+    doLast {
+        copy {
+            from jar.archiveFile
+            into layout.projectDirectory
+            rename { 'click-jackalope-burp.jar' }
+        }
+    }
 }
 
 jar.finalizedBy(tasks.named('copyRootJar'))
