@@ -67,8 +67,39 @@ Typical workflow:
 The standalone shell helper is still included for simple local generation:
 
 ```bash
-./click-jackalope.sh -u "https://target.example" [-e] [-f out.html]
+./click-jackalope.sh -u "https://target.example" [-e] [-s] [-f out.html]
 ```
+
+CLI notes:
+
+- `-e` opens the generated file after writing it.
+- `-s` adds iframe sandboxing to the generated test page.
+- The CLI now uses the same escaped HTML output and default non-sandboxed behavior as the Burp extension.
+
+## Local Lab
+The repository includes a self-contained local web lab with login-style pages that exercise distinct frame-defense setups.
+
+Run it with:
+
+```bash
+python3 lab/server.py
+```
+
+Lab entry point:
+
+```text
+http://127.0.0.1:8765/lab
+```
+
+The lab includes:
+
+- a deliberately frameable login page with no frame protections
+- a login page blocked by `X-Frame-Options: DENY`
+- a login page restricted by `X-Frame-Options: SAMEORIGIN`
+- a login page blocked by `Content-Security-Policy: frame-ancestors 'none'`
+- a login page restricted by `Content-Security-Policy: frame-ancestors 'self'`
+
+These routes give users known-good expected outcomes when trying the Burp extension or CLI for the first time.
 
 ## Repository Notes
 - The supported Burp implementation is the Java source under [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java).

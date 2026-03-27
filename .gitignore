@@ -1,6 +1,7 @@
 .DS_Store
 .gradle/
 build/
+__pycache__/
 
 *.burp
 *.burp.backup
