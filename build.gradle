@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.clickjackalope'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly 'net.portswigger.burp.extensions:montoya-api:2026.2'
+}
+
+jar {
+    archiveBaseName = 'click-jackalope-burp'
+
+    manifest {
+        attributes(
+            'Implementation-Title': 'Click-Jackalope',
+            'Implementation-Version': project.version
+        )
+    }
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}

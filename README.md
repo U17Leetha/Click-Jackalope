@@ -1,27 +1,75 @@
 # Click-Jackalope
-A compact toolkit for generating clickjacking proofs-of-concept and testing frame defenses.
+Click-Jackalope is a compact toolkit for generating clickjacking proof-of-concept pages during authorized security testing.
 
-# Description
-clickjacking POC generator for authorized security testing. Drop in a target URL and create a clean iframe test page (with options to auto-open and proxy through local tooling). Built for pentesters who want a fast, reproducible way to verify X-Frame-Options/CSP frame-ancestors protections and to document attack/success cases for reports.
+## Purpose
+The extension helps testers answer a narrow workflow question quickly: can this target page be framed, and if so, what does a minimal proof-of-concept look like? It is intended for validating `X-Frame-Options` and CSP `frame-ancestors` behavior and for producing reproducible evidence for reports.
 
-# Usage
-click-jackalope -u <url> [-e] [-f <filename>] [-h]
+## Why This Exists
+Clickjacking verification is usually simple, but it is repetitive. Testers often need to:
 
-Options:
-  -u URL        Target URL to embed in the iframe (required)
-  -e            Open the generated HTML with the system default browser (optional)
-  -f FILENAME   Output filename (default: clickjack_test.html)
-  -h            Show this help / usage
+- extract a URL from Burp traffic
+- build a local HTML page that embeds it in an iframe
+- save the file and open it in a browser
+- document whether framing succeeds or is blocked
 
-# Examples
-# Create a POC file for the target
-click-jackalope -u "https://target.example.com/"
+Click-Jackalope reduces that sequence to a short Burp-native workflow.
 
-# Create and open the POC in your default browser
-click-jackalope -u "https://target.example" -e
+## Burp Extension
+The Burp Suite extension now targets PortSwigger's current Java-based Montoya API instead of the legacy Jython Extender API. This makes it easier to load, test, package, and submit through the BApp review process.
 
-# Create with a custom filename (Make sure the output file has a .html extension)
-click-jackalope -u "https://target.example" -f c2poc.html -e
+## Key Features
+- Adds a dedicated `Click-Jackalope` Burp suite tab.
+- Generates a local clickjacking test page from a target URL.
+- Adds context menu items in Burp to pre-populate the target from selected requests.
+- Provides an in-extension HTML preview before saving.
+- Saves the generated HTML locally and can open it in the default browser.
+- Escapes untrusted URL content before rendering it into HTML.
+- Makes iframe sandboxing optional instead of forcing it on every test.
 
-# Installation One-liner
-    sudo sh -c 'curl -fsSL https://raw.githubusercontent.com/U17Leetha/Click-Jackalope/main/click-jackalope -o /usr/local/bin/click-jackalope && chmod +x /usr/local/bin/click-jackalope'
+## Build
+
+```bash
+gradle clean jar
+```
+
+Build artifact:
+
+```text
+build/libs/click-jackalope-burp-1.0.0.jar
+```
+
+## Using In Burp
+1. Open `Extensions > Installed` in Burp Suite.
+2. Click `Add`.
+3. Set the extension type to `Java`.
+4. Select [click-jackalope-burp-1.0.0.jar](/Users/matt/Development/Click-Jackalope/build/libs/click-jackalope-burp-1.0.0.jar) after building it.
+5. Load the extension and open the `Click-Jackalope` tab.
+
+Typical workflow:
+
+- Paste a target URL into the tab and preview or save the generated PoC.
+- Or right-click a request in Proxy, Target, Repeater, or Logger and choose `Create Click-Jackalope POC`.
+- Save the HTML locally and open it in a browser to verify framing behavior.
+
+## BApp Submission Notes
+- The supported Burp implementation is the Java/Montoya source under [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java).
+- The extension builds into a normal JAR and no longer requires Jython.
+- The repository intentionally ignores local Burp project files, build outputs, generated HTML, and the legacy Jython prototype so the submission tree stays clean.
+- The extension performs only local UI, file-generation, and browser-opening actions. It does not transmit generated data to external services.
+
+## Reviewer Notes
+- Primary entry point: [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java)
+- Main UI: [ClickJackalopePanel.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopePanel.java)
+- HTML generation: [ClickJackalopeHtmlGenerator.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeHtmlGenerator.java)
+- Context menu integration: [ClickJackalopeContextMenuItemsProvider.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeContextMenuItemsProvider.java)
+
+## CLI Helper
+The standalone shell helper is still included for simple local generation:
+
+```bash
+./click-jackalope.sh -u "https://target.example" [-e] [-f out.html]
+```
+
+## Repository Notes
+- The supported Burp implementation is the Java source under [ClickJackalopeExtension.java](/Users/matt/Development/Click-Jackalope/src/main/java/com/clickjackalope/burp/ClickJackalopeExtension.java).
+- The shell helper remains available for quick standalone PoC generation outside Burp.

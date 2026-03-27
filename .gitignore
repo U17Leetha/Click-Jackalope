@@ -1,0 +1,11 @@
+.DS_Store
+.gradle/
+build/
+
+*.burp
+*.burp.backup
+clickjack_test.html
+click-jackalope-burp
+
+# Keep the legacy Jython prototype locally without shipping it.
+click-jackalope-burp.py
