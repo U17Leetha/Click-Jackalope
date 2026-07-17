@@ -9,11 +9,13 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class ServedPocServer
 {
     private HttpServer server;
+    private ExecutorService serverExecutor;
     private int port;
     private volatile byte[] body = "".getBytes(StandardCharsets.UTF_8);
 
@@ -24,14 +26,15 @@ final class ServedPocServer
         if (server == null || port != requestedPort)
         {
             stop();
-            server = HttpServer.create(new InetSocketAddress("127.0.0.1", requestedPort), 0);
-            server.createContext("/", new PocHandler());
-            server.setExecutor(Executors.newSingleThreadExecutor(runnable ->
+            serverExecutor = Executors.newSingleThreadExecutor(runnable ->
             {
                 Thread thread = new Thread(runnable, "click-jackalope-poc-server");
                 thread.setDaemon(true);
                 return thread;
-            }));
+            });
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", requestedPort), 0);
+            server.createContext("/", new PocHandler());
+            server.setExecutor(serverExecutor);
             server.start();
             port = requestedPort;
         }
@@ -46,6 +49,12 @@ final class ServedPocServer
             server.stop(0);
             server = null;
             port = 0;
+        }
+
+        if (serverExecutor != null)
+        {
+            serverExecutor.shutdownNow();
+            serverExecutor = null;
         }
     }
 

@@ -1,7 +1,10 @@
 package com.clickjackalope.burp;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.ui.editor.EditorOptions;
+import burp.api.montoya.ui.editor.RawEditor;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -13,8 +16,6 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -44,8 +45,8 @@ final class ClickJackalopePanel extends JPanel
     private final JTextField servePortField;
     private final JCheckBox sandboxCheckBox;
     private final JComboBox<ClickJackalopeTemplate> templateComboBox;
-    private final JTextArea previewArea;
-    private final JTextArea analysisArea;
+    private final RawEditor previewArea;
+    private final RawEditor analysisArea;
     private final JLabel statusLabel;
 
     private ClickJackalopeFrameAnalysis currentAnalysis;
@@ -82,20 +83,15 @@ final class ClickJackalopePanel extends JPanel
         controls.add(Box.createRigidArea(new Dimension(0, 12)));
         controls.add(buttonRow());
 
-        this.analysisArea = new JTextArea(7, 120);
-        analysisArea.setEditable(false);
-        analysisArea.setLineWrap(true);
-        analysisArea.setWrapStyleWord(true);
-        analysisArea.setText(defaultAnalysisText());
+        this.analysisArea = api.userInterface().createRawEditor(EditorOptions.READ_ONLY);
+        analysisArea.setContents(ByteArray.byteArray(defaultAnalysisText().getBytes(StandardCharsets.UTF_8)));
 
-        this.previewArea = new JTextArea(18, 120);
-        previewArea.setEditable(false);
-        previewArea.setLineWrap(false);
-        previewArea.setText(ClickJackalopeHtmlGenerator.build("https://target.example", false, ClickJackalopeTemplate.STANDARD));
+        this.previewArea = api.userInterface().createRawEditor(EditorOptions.READ_ONLY);
+        previewArea.setContents(ByteArray.byteArray(ClickJackalopeHtmlGenerator.build("https://target.example", false, ClickJackalopeTemplate.STANDARD).getBytes(StandardCharsets.UTF_8)));
 
         JPanel centerPanel = new JPanel(new BorderLayout(0, 12));
-        centerPanel.add(section("Frame Defense Analysis", new JScrollPane(analysisArea)), BorderLayout.NORTH);
-        centerPanel.add(section("Generated PoC Preview", new JScrollPane(previewArea)), BorderLayout.CENTER);
+        centerPanel.add(section("Frame Defense Analysis", analysisArea.uiComponent()), BorderLayout.NORTH);
+        centerPanel.add(section("Generated PoC Preview", previewArea.uiComponent()), BorderLayout.CENTER);
 
         this.statusLabel = new JLabel("Ready", SwingConstants.LEFT);
 
@@ -210,8 +206,7 @@ final class ClickJackalopePanel extends JPanel
     {
         String normalizedUrl = normalizedUrl();
         String html = ClickJackalopeHtmlGenerator.build(normalizedUrl, sandboxCheckBox.isSelected(), selectedTemplate());
-        previewArea.setText(html);
-        previewArea.setCaretPosition(0);
+        previewArea.setContents(ByteArray.byteArray(html.getBytes(StandardCharsets.UTF_8)));
         statusLabel.setText("Preview ready for " + normalizedUrl);
     }
 
@@ -237,8 +232,8 @@ final class ClickJackalopePanel extends JPanel
             return;
         }
 
-        previewArea.setText(ClickJackalopeHtmlGenerator.build(normalizedUrl, sandboxCheckBox.isSelected(), selectedTemplate()));
-        previewArea.setCaretPosition(0);
+        String html = ClickJackalopeHtmlGenerator.build(normalizedUrl, sandboxCheckBox.isSelected(), selectedTemplate());
+        previewArea.setContents(ByteArray.byteArray(html.getBytes(StandardCharsets.UTF_8)));
 
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Save Click-Jackalope POC");
@@ -252,25 +247,29 @@ final class ClickJackalopePanel extends JPanel
         }
 
         Path outputPath = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
-        String html = ClickJackalopeHtmlGenerator.build(normalizedUrl, sandboxCheckBox.isSelected(), selectedTemplate());
+        statusLabel.setText("Saving\u2026");
 
-        try
+        executorService.submit(() ->
         {
-            Files.writeString(outputPath, html, StandardCharsets.UTF_8);
-            fileField.setText(outputPath.getFileName().toString());
-            statusLabel.setText("Saved " + outputPath);
-            api.logging().logToOutput("Click-Jackalope wrote " + outputPath);
-        }
-        catch (IOException exception)
-        {
-            showError("Could not save the generated POC.", exception);
-            return;
-        }
-
-        if (openAfterSave)
-        {
-            executorService.submit(() -> openInBrowser(outputPath.toUri(), "Click-Jackalope opened " + outputPath));
-        }
+            try
+            {
+                Files.writeString(outputPath, html, StandardCharsets.UTF_8);
+                api.logging().logToOutput("Click-Jackalope wrote " + outputPath);
+                SwingUtilities.invokeLater(() ->
+                {
+                    fileField.setText(outputPath.getFileName().toString());
+                    statusLabel.setText("Saved " + outputPath);
+                });
+                if (openAfterSave)
+                {
+                    openInBrowser(outputPath.toUri(), "Click-Jackalope opened " + outputPath);
+                }
+            }
+            catch (IOException exception)
+            {
+                SwingUtilities.invokeLater(() -> showError("Could not save the generated POC.", exception));
+            }
+        });
     }
 
     private void serveAndOpen()
@@ -304,20 +303,23 @@ final class ClickJackalopePanel extends JPanel
         }
 
         String html = ClickJackalopeHtmlGenerator.build(normalizedUrl, sandboxCheckBox.isSelected(), selectedTemplate());
-        previewArea.setText(html);
-        previewArea.setCaretPosition(0);
+        previewArea.setContents(ByteArray.byteArray(html.getBytes(StandardCharsets.UTF_8)));
+        statusLabel.setText("Starting server\u2026");
 
-        try
+        executorService.submit(() ->
         {
-            URI uri = servedPocServer.startOrUpdate(html, port);
-            statusLabel.setText("Serving PoC at " + uri);
-            api.logging().logToOutput("Click-Jackalope serving PoC at " + uri);
-            executorService.submit(() -> openInBrowser(uri, "Click-Jackalope opened served PoC " + uri));
-        }
-        catch (IOException exception)
-        {
-            showError("Could not start the local PoC server.", exception);
-        }
+            try
+            {
+                URI uri = servedPocServer.startOrUpdate(html, port);
+                api.logging().logToOutput("Click-Jackalope serving PoC at " + uri);
+                SwingUtilities.invokeLater(() -> statusLabel.setText("Serving PoC at " + uri));
+                openInBrowser(uri, "Click-Jackalope opened served PoC " + uri);
+            }
+            catch (IOException exception)
+            {
+                SwingUtilities.invokeLater(() -> showError("Could not start the local PoC server.", exception));
+            }
+        });
     }
 
     private String normalizedUrl()
@@ -395,13 +397,11 @@ final class ClickJackalopePanel extends JPanel
     private void applyAnalysis(ClickJackalopeFrameAnalysis analysis)
     {
         currentAnalysis = analysis;
-        analysisArea.setText(
-            "Summary: " + analysis.summary() + "\n\n" +
+        String text = "Summary: " + analysis.summary() + "\n\n" +
             "Guidance: " + analysis.guidance() + "\n\n" +
             "X-Frame-Options: " + analysis.xFrameOptions() + "\n" +
-            "CSP frame-ancestors: " + analysis.frameAncestors()
-        );
-        analysisArea.setCaretPosition(0);
+            "CSP frame-ancestors: " + analysis.frameAncestors();
+        analysisArea.setContents(ByteArray.byteArray(text.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static String defaultAnalysisText()
