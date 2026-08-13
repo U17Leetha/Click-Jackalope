@@ -1,12 +1,12 @@
 package com.clickjackalope.burp;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
-
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
@@ -14,28 +14,29 @@ import java.util.concurrent.Executors;
 
 final class ServedPocServer
 {
-    private HttpServer server;
+    private ServerSocket serverSocket;
     private ExecutorService serverExecutor;
     private int port;
-    private volatile byte[] body = "".getBytes(StandardCharsets.UTF_8);
+    private volatile byte[] body = new byte[0];
 
     synchronized URI startOrUpdate(String html, int requestedPort) throws IOException
     {
         body = html.getBytes(StandardCharsets.UTF_8);
 
-        if (server == null || port != requestedPort)
+        if (serverSocket == null || port != requestedPort)
         {
             stop();
+            ServerSocket socket = new ServerSocket();
+            socket.setReuseAddress(true);
+            socket.bind(new InetSocketAddress("127.0.0.1", requestedPort));
+            serverSocket = socket;
             serverExecutor = Executors.newSingleThreadExecutor(runnable ->
             {
                 Thread thread = new Thread(runnable, "click-jackalope-poc-server");
                 thread.setDaemon(true);
                 return thread;
             });
-            server = HttpServer.create(new InetSocketAddress("127.0.0.1", requestedPort), 0);
-            server.createContext("/", new PocHandler());
-            server.setExecutor(serverExecutor);
-            server.start();
+            serverExecutor.submit(() -> serveLoop(socket));
             port = requestedPort;
         }
 
@@ -44,10 +45,14 @@ final class ServedPocServer
 
     synchronized void stop()
     {
-        if (server != null)
+        if (serverSocket != null)
         {
-            server.stop(0);
-            server = null;
+            try
+            {
+                serverSocket.close();
+            }
+            catch (IOException ignored) {}
+            serverSocket = null;
             port = 0;
         }
 
@@ -58,19 +63,59 @@ final class ServedPocServer
         }
     }
 
-    private final class PocHandler implements HttpHandler
+    private void serveLoop(ServerSocket socket)
     {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException
+        while (!socket.isClosed())
         {
-            byte[] response = body;
-            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
-            exchange.getResponseHeaders().set("Cache-Control", "no-store");
-            exchange.sendResponseHeaders(200, response.length);
-            try (OutputStream outputStream = exchange.getResponseBody())
+            try
             {
-                outputStream.write(response);
+                handleClient(socket.accept());
+            }
+            catch (SocketException ignored)
+            {
+                // ServerSocket was closed — exit cleanly.
+                break;
+            }
+            catch (IOException ignored)
+            {
+                // Individual accept error; keep serving.
             }
         }
+    }
+
+    private void handleClient(Socket client)
+    {
+        try (client)
+        {
+            client.setSoTimeout(5000);
+
+            // Drain HTTP request headers up to the blank line (\r\n\r\n).
+            InputStream in = client.getInputStream();
+            int p3 = 0, p2 = 0, p1 = 0, b;
+            while ((b = in.read()) != -1)
+            {
+                if (p3 == '\r' && p2 == '\n' && p1 == '\r' && b == '\n')
+                {
+                    break;
+                }
+                p3 = p2;
+                p2 = p1;
+                p1 = b;
+            }
+
+            byte[] response = body;
+            String headers = "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: text/html; charset=utf-8\r\n" +
+                "Content-Length: " + response.length + "\r\n" +
+                "Cache-Control: no-store\r\n" +
+                "Connection: close\r\n" +
+                "\r\n";
+
+            OutputStream out = client.getOutputStream();
+            out.write(headers.getBytes(StandardCharsets.US_ASCII));
+            out.write(response);
+            out.flush();
+        }
+        catch (IOException ignored) {}
     }
 }
