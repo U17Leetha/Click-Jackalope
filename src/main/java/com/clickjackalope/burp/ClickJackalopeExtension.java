@@ -20,7 +20,8 @@ public final class ClickJackalopeExtension implements BurpExtension, ExtensionUn
     public void initialize(MontoyaApi api)
     {
         this.api = api;
-        this.executorService = Executors.newSingleThreadExecutor(runnable ->
+        this.executorService = new java.util.concurrent.ThreadPoolExecutor(1, 1, 0, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.ArrayBlockingQueue<>(8), runnable ->
         {
             Thread thread = new Thread(runnable, "click-jackalope-open");
             thread.setDaemon(true);

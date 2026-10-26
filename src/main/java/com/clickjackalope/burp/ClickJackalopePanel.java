@@ -7,6 +7,8 @@ import burp.api.montoya.ui.editor.EditorOptions;
 import burp.api.montoya.ui.editor.RawEditor;
 
 import javax.swing.BorderFactory;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -27,7 +29,8 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -101,6 +104,12 @@ final class ClickJackalopePanel extends JPanel
 
         api.userInterface().applyThemeToComponent(content);
         add(content, BorderLayout.CENTER);
+        urlField.getDocument().addDocumentListener(new DocumentListener()
+        {
+            public void insertUpdate(DocumentEvent event) { invalidateAnalysis(); }
+            public void removeUpdate(DocumentEvent event) { invalidateAnalysis(); }
+            public void changedUpdate(DocumentEvent event) { invalidateAnalysis(); }
+        });
     }
 
     void populateFromRequestResponse(HttpRequestResponse requestResponse, boolean promptForSave)
@@ -119,7 +128,7 @@ final class ClickJackalopePanel extends JPanel
         urlField.setText(url);
         fileField.setText(defaultFilename(url));
         applyAnalysis(ClickJackalopeFrameAnalysis.analyze(requestResponse));
-        updatePreview();
+        updatePreviewSafely();
 
         if (promptForSave)
         {
@@ -237,7 +246,11 @@ final class ClickJackalopePanel extends JPanel
 
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Save Click-Jackalope POC");
-        chooser.setSelectedFile(Path.of(fileField.getText().trim()).toFile());
+        try { chooser.setSelectedFile(Path.of(fileField.getText().trim()).toFile()); }
+        catch (java.nio.file.InvalidPathException exception) {
+            showError("The output filename is not valid.", exception);
+            return;
+        }
 
         int result = chooser.showSaveDialog(parentComponent());
         if (result != JFileChooser.APPROVE_OPTION)
@@ -249,7 +262,7 @@ final class ClickJackalopePanel extends JPanel
         Path outputPath = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
         statusLabel.setText("Saving\u2026");
 
-        executorService.submit(() ->
+        submitTask(() ->
         {
             try
             {
@@ -306,7 +319,7 @@ final class ClickJackalopePanel extends JPanel
         previewArea.setContents(ByteArray.byteArray(html.getBytes(StandardCharsets.UTF_8)));
         statusLabel.setText("Starting server\u2026");
 
-        executorService.submit(() ->
+        submitTask(() ->
         {
             try
             {
@@ -324,7 +337,12 @@ final class ClickJackalopePanel extends JPanel
 
     private String normalizedUrl()
     {
-        String raw = urlField.getText().trim();
+        return normalizedUrl(urlField.getText());
+    }
+
+    static String normalizedUrl(String value)
+    {
+        String raw = value.trim();
         if (raw.isEmpty())
         {
             throw new IllegalArgumentException("Please enter a target URL first.");
@@ -339,18 +357,27 @@ final class ClickJackalopePanel extends JPanel
 
         try
         {
-            URI uri = new URI(normalized);
-            if (uri.getScheme() == null || uri.getHost() == null)
+            URL uri = new URL(normalized);
+            if (uri.getHost().isBlank() || URI.create(uri.getProtocol() + "://" + uri.getAuthority() + "/").getHost() == null ||
+                uri.getPort() > 65535 || normalized.chars().anyMatch(Character::isISOControl))
             {
                 throw new IllegalArgumentException("Please enter a full HTTP or HTTPS URL.");
             }
         }
-        catch (URISyntaxException exception)
+        catch (MalformedURLException exception)
         {
             throw new IllegalArgumentException("The target URL is not valid.", exception);
         }
 
         return normalized;
+    }
+
+    private void submitTask(Runnable task)
+    {
+        try { executorService.execute(task); }
+        catch (java.util.concurrent.RejectedExecutionException busy) {
+            showError("Background work is busy or the extension has stopped.", busy);
+        }
     }
 
     private void openInBrowser(URI uri, String successMessage)
@@ -360,7 +387,7 @@ final class ClickJackalopePanel extends JPanel
             Desktop.getDesktop().browse(uri);
             api.logging().logToOutput(successMessage);
         }
-        catch (IOException exception)
+        catch (IOException | UnsupportedOperationException | SecurityException exception)
         {
             api.logging().logToError("Click-Jackalope could not open " + uri + ": " + exception.getMessage());
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
@@ -384,7 +411,9 @@ final class ClickJackalopePanel extends JPanel
 
     private void showError(String message, Exception exception)
     {
-        api.logging().logToError("Click-Jackalope: " + message + " " + exception.getMessage());
+        if (exception.getMessage() != null && !message.contains(exception.getMessage()))
+            message += "\n" + exception.getMessage();
+        api.logging().logToError("Click-Jackalope: " + message);
         statusLabel.setText(message);
         JOptionPane.showMessageDialog(
             parentComponent(),
@@ -392,6 +421,12 @@ final class ClickJackalopePanel extends JPanel
             "Click-Jackalope",
             JOptionPane.ERROR_MESSAGE
         );
+    }
+
+    private void invalidateAnalysis()
+    {
+        applyAnalysis(ClickJackalopeFrameAnalysis.analyze(null));
+        statusLabel.setText("Target changed; select a response in Burp to analyze this URL.");
     }
 
     private void applyAnalysis(ClickJackalopeFrameAnalysis analysis)
@@ -416,7 +451,7 @@ final class ClickJackalopePanel extends JPanel
     {
         try
         {
-            String host = new URI(url).getHost();
+            String host = new URL(url).getHost();
             if (host == null || host.isBlank())
             {
                 return "clickjack_test.html";
@@ -424,7 +459,7 @@ final class ClickJackalopePanel extends JPanel
 
             return "clickjack_" + host.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9.-]", "_") + ".html";
         }
-        catch (URISyntaxException exception)
+        catch (MalformedURLException exception)
         {
             return "clickjack_test.html";
         }

@@ -3,6 +3,13 @@ package com.clickjackalope.burp;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.responses.HttpResponse;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 final class ClickJackalopeFrameAnalysis
 {
     private final String summary;
@@ -31,76 +38,73 @@ final class ClickJackalopeFrameAnalysis
         }
 
         HttpResponse response = requestResponse.response();
-        String xfo = headerValue(response, "X-Frame-Options");
-        String csp = headerValue(response, "Content-Security-Policy");
-        String frameAncestors = extractFrameAncestors(csp);
-
-        if (frameAncestors != null)
+        String xfo = String.join(", ", headerValues(response, "X-Frame-Options"));
+        List<String> policies = new ArrayList<>();
+        for (String header : headerValues(response, "Content-Security-Policy"))
         {
-            String lower = frameAncestors.toLowerCase();
-            if (lower.contains("'none'"))
+            for (String policy : header.split(",", -1))
             {
-                return new ClickJackalopeFrameAnalysis(
-                    "Framing should be blocked by CSP",
-                    "Expected browser behavior: the page should refuse to load in an iframe because `frame-ancestors 'none'` forbids all framing.",
-                    valueOrFallback(xfo),
-                    frameAncestors
-                );
+                String sources = extractFrameAncestors(policy);
+                if (sources != null) policies.add(sources);
             }
-            if (lower.contains("'self'"))
-            {
-                return new ClickJackalopeFrameAnalysis(
-                    "Framing is restricted to same-origin ancestors",
-                    "Expected browser behavior: local-file PoCs and foreign-origin PoCs should fail. A PoC served from the same origin may still work.",
-                    valueOrFallback(xfo),
-                    frameAncestors
-                );
-            }
-
-            return new ClickJackalopeFrameAnalysis(
-                "Framing is controlled by CSP allowlist",
-                "Expected browser behavior depends on whether the PoC origin matches the `frame-ancestors` sources in the response CSP.",
-                valueOrFallback(xfo),
-                frameAncestors
-            );
         }
-
-        if (xfo != null)
+        String ancestors = policies.stream().map(value -> value.isEmpty() ? "(empty)" : value)
+            .collect(Collectors.joining(" | "));
+        if (!policies.isEmpty())
         {
-            String normalizedXfo = xfo.trim().toUpperCase();
-            if (normalizedXfo.contains("DENY"))
-            {
-                return new ClickJackalopeFrameAnalysis(
-                    "Framing should be blocked by X-Frame-Options",
-                    "Expected browser behavior: the page should refuse to load in an iframe because the response sends `X-Frame-Options: DENY`.",
-                    xfo,
-                    "Not observed"
-                );
+            List<List<String>> sources = policies.stream()
+                .map(value -> value.isEmpty() ? List.<String>of() : Arrays.asList(value.split("\\s+")))
+                .toList();
+            if (sources.stream().anyMatch(tokens -> tokens.isEmpty() ||
+                tokens.stream().allMatch(token -> token.equalsIgnoreCase("'none'"))))
+                return result("Framing should be blocked by CSP",
+                    "An enforced frame-ancestors policy has an empty source list or only 'none', forbidding all framing.", xfo, ancestors);
+            if (sources.stream().anyMatch(tokens -> tokens.stream().allMatch(token ->
+                token.equalsIgnoreCase("'self'") || token.equalsIgnoreCase("'none'"))))
+                return result("Framing is restricted to same-origin ancestors",
+                    "At least one enforced policy permits only the same origin; every policy must allow every ancestor. Verify in the browser.", xfo, ancestors);
+            if (sources.stream().allMatch(tokens -> tokens.contains("*")))
+                return result("Any website may frame the page",
+                    "All frame-ancestors policies permit wildcard network origins. This is not clickjacking protection for HTTP(S) websites; verify the PoC in the browser.", xfo, ancestors);
+            if (policies.size() > 1)
+                return result("Framing depends on the intersection of CSP policies",
+                    "Every ancestor must match every enforced policy. These policies may have no common permitted origin; verify the complete ancestor chain in the browser.", xfo, ancestors);
+            if (sources.get(0).stream().anyMatch(token ->
+                !token.equalsIgnoreCase("'self'") && !token.equalsIgnoreCase("'none'") &&
+                !token.matches("(?i)(https?://)?(\\*\\.)?[a-z0-9-]+(\\.[a-z0-9-]+)+(:[0-9]+)?(/[^\\s]*)?")))
+                return result("CSP framing requires browser validation",
+                    "The source list contains expressions this analyzer cannot safely classify. Verify browser source matching before reporting framing protection or exposure.", xfo, ancestors);
+            if (requestResponse.request() != null) {
+                try {
+                    java.net.URL target = new java.net.URL(requestResponse.request().url());
+                    String origin = target.getProtocol() + "://" + target.getAuthority();
+                    if (sources.get(0).stream().allMatch(token -> token.equals("'self'") || token.equals(origin)))
+                        return result("Framing is restricted to same-origin ancestors", "The policy permits only this response origin. Verify in the browser.", xfo, ancestors);
+                } catch (java.net.MalformedURLException ignored) { }
             }
-            if (normalizedXfo.contains("SAMEORIGIN"))
-            {
-                return new ClickJackalopeFrameAnalysis(
-                    "Framing is restricted to same-origin ancestors",
-                    "Expected browser behavior: local-file PoCs and foreign-origin PoCs should fail. A PoC served from the same origin may still work.",
-                    xfo,
-                    "Not observed"
-                );
-            }
-
-            return new ClickJackalopeFrameAnalysis(
-                "Framing behavior depends on X-Frame-Options handling",
-                "The response sends an `X-Frame-Options` value that should be reviewed manually in the browser and response headers.",
-                xfo,
-                "Not observed"
-            );
+            return result("Other websites may frame the page under CSP",
+                "The source list includes origins beyond 'self'. Any matching website may frame the page; verify source matching and the complete ancestor chain in the browser.", xfo, ancestors);
         }
+        Set<String> options = Arrays.stream(xfo.split(","))
+            .map(String::trim).map(value -> value.toUpperCase(Locale.ROOT))
+            .filter(value -> !value.isEmpty()).collect(Collectors.toSet());
+        if (options.contains("DENY") || (options.size() > 1 && options.contains("SAMEORIGIN")))
+            return result("Framing should be blocked by X-Frame-Options",
+                "DENY or conflicting X-Frame-Options values block framing in modern browsers. Verify the response in the browser.", xfo, ancestors);
+        if (options.equals(Set.of("SAMEORIGIN")))
+            return result("Framing is restricted to same-origin ancestors",
+                "X-Frame-Options permits only same-origin ancestors. Foreign-origin PoCs should fail.", xfo, ancestors);
+        if (!options.isEmpty())
+            return result("Framing behavior depends on X-Frame-Options handling",
+                "Unrecognized X-Frame-Options values may be ignored. Verify in the browser before reporting protection.", xfo, ancestors);
+        return result("No frame-defense header observed",
+            "The page may be frameable unless other controls or browser behavior prevent it. Verify the PoC in the browser.", xfo, ancestors);
+    }
 
-        return new ClickJackalopeFrameAnalysis(
-            "No frame-defense header observed",
-            "Expected browser behavior: the page may be frameable unless other controls or browser behavior prevent it.",
-            "Not observed",
-            "Not observed"
-        );
+    private static ClickJackalopeFrameAnalysis result(String summary, String guidance, String xfo, String ancestors)
+    {
+        return new ClickJackalopeFrameAnalysis(summary, guidance,
+            xfo.isEmpty() ? "Not observed" : xfo, ancestors.isEmpty() ? "Not observed" : ancestors);
     }
 
     String summary()
@@ -123,38 +127,20 @@ final class ClickJackalopeFrameAnalysis
         return frameAncestors;
     }
 
-    private static String headerValue(HttpResponse response, String name)
+    private static List<String> headerValues(HttpResponse response, String name)
     {
-        String value = response.headerValue(name);
-        if (value == null || value.isBlank())
-        {
-            return null;
-        }
-        return value;
+        return response.headers().stream().filter(header -> header.name().equalsIgnoreCase(name))
+            .map(header -> header.value()).toList();
     }
 
     private static String extractFrameAncestors(String csp)
     {
-        if (csp == null || csp.isBlank())
-        {
-            return null;
-        }
-
         for (String directive : csp.split(";"))
         {
-            String trimmed = directive.trim();
-            if (trimmed.regionMatches(true, 0, "frame-ancestors", 0, "frame-ancestors".length()))
-            {
-                String value = trimmed.substring("frame-ancestors".length()).trim();
-                return value.isEmpty() ? "present but empty" : value;
-            }
+            String[] parts = directive.trim().split("\\s+", 2);
+            if (parts[0].equalsIgnoreCase("frame-ancestors"))
+                return parts.length == 1 ? "" : parts[1].trim();
         }
-
         return null;
-    }
-
-    private static String valueOrFallback(String value)
-    {
-        return value == null ? "Not observed" : value;
     }
 }

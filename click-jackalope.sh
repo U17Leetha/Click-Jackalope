@@ -51,11 +51,11 @@ cleanup() {
 
 escape_html() {
   local value="$1"
-  value=${value//&/&amp;}
-  value=${value//</&lt;}
-  value=${value//>/&gt;}
-  value=${value//\"/&quot;}
-  value=${value//\'/&#x27;}
+  value=${value//&/\&amp;}
+  value=${value//</\&lt;}
+  value=${value//>/\&gt;}
+  value=${value//\"/\&quot;}
+  value=${value//\'/\&#x27;}
   printf '%s' "$value"
 }
 
@@ -237,9 +237,27 @@ echo "Wrote $FILE (target: $URL, sandbox: $SANDBOX, template: $TEMPLATE)"
 if $SERVE; then
   TMPDIR_PATH="$(mktemp -d)"
   cp "$FILE" "$TMPDIR_PATH/index.html"
-  echo "Serving PoC at http://127.0.0.1:${SERVE_PORT}/"
-  python3 -m http.server "$SERVE_PORT" --bind 127.0.0.1 --directory "$TMPDIR_PATH" >/dev/null 2>&1 &
+  python3 -u - "$SERVE_PORT" "$TMPDIR_PATH" <<'SERVER' &
+import functools
+import http.server
+import pathlib
+import sys
+try:
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[2])
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), handler)
+except OSError as error:
+    sys.exit(f"Could not start the local PoC server: {error}")
+pathlib.Path(sys.argv[2], ".ready").touch()
+server.serve_forever()
+SERVER
   SERVER_PID=$!
+  for ((attempt=0; attempt<50; attempt++)); do
+    [[ -f "$TMPDIR_PATH/.ready" ]] && break
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then wait "$SERVER_PID"; exit 1; fi
+    sleep 0.1
+  done
+  if [[ ! -f "$TMPDIR_PATH/.ready" ]]; then echo "PoC server startup timed out." >&2; exit 1; fi
+  echo "Serving PoC at http://127.0.0.1:${SERVE_PORT}/"
 
   if $OPEN; then
     open_target "http://127.0.0.1:${SERVE_PORT}/"

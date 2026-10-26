@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.clickjackalope'
-version = '1.0.0'
+version = '1.0.1'
 
 java {
     toolchain {
@@ -12,7 +12,6 @@ java {
 }
 
 repositories {
-    mavenLocal()
     mavenCentral()
 }
 
@@ -45,6 +44,7 @@ jar {
 
 tasks.register('copyRootJar') {
     dependsOn jar
+    inputs.file(tasks.named('jar').flatMap { it.archiveFile })
     outputs.file(layout.projectDirectory.file('click-jackalope-burp.jar'))
     doLast {
         copy {
@@ -56,3 +56,8 @@ tasks.register('copyRootJar') {
 }
 
 jar.finalizedBy(tasks.named('copyRootJar'))
+
+tasks.register('verifyCli', Exec) {
+    commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tests', '-v'
+}
+check.dependsOn verifyCli
