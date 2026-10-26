@@ -230,6 +230,10 @@ if $SANDBOX; then
   SANDBOX_NOTE="Iframe sandboxing is enabled for this test."
 fi
 
+if [[ -e "$FILE" ]]; then
+  echo "WARNING: overwriting existing file $FILE" >&2
+fi
+
 render_html > "$FILE"
 
 echo "Wrote $FILE (target: $URL, sandbox: $SANDBOX, template: $TEMPLATE)"
@@ -264,7 +268,11 @@ SERVER
   fi
 
   echo "Press Ctrl+C to stop serving."
-  wait "$SERVER_PID"
+  # Ctrl+C is the documented way to stop, so interruption must exit 0. Trapping INT lets this
+  # shell reap the signalled server instead of dying from it; cleanup still runs via the EXIT trap.
+  trap ' ' INT
+  wait "$SERVER_PID" || status=$?
+  if [[ -n "${status:-}" && "$status" -lt 128 ]]; then exit "$status"; fi
   exit 0
 fi
 
